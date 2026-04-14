@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON 工具箱</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #334155;
+      --border: #475569;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --green: #22c55e;
+      --green-bg: rgba(34, 197, 94, 0.12);
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.12);
+      --yellow: #eab308;
+      --yellow-bg: rgba(234, 179, 8, 0.12);
+      --radius: 10px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      height: 56px;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+      white-space: nowrap;
+    }
+
+    nav { display: flex; gap: 4px; }
+
+    nav button {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+
+    nav button:hover { background: var(--surface2); color: var(--text); }
+    nav button.active { background: var(--primary); color: #fff; }
+
+    main { flex: 1; padding: 24px 32px; display: flex; flex-direction: column; overflow: hidden; }
+
+    .panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .panel.active { display: flex; }
+
+    /* ---------- 格式化面板 ---------- */
+    #formatPanel .content-area {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .editor-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .col-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .col-header h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .toolbar { display: flex; gap: 6px; }
+
+    .btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-weight: 500;
+    }
+
+    .btn:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: var(--primary-hover); }
+
+    textarea, .output-box {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      color: var(--text);
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+      overflow: auto;
+    }
+
+    textarea:focus { border-color: var(--primary); }
+
+    textarea::placeholder { color: var(--text-muted); }
+
+    .output-box {
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 0;
+    }
+
+    /* ---------- 可折叠 JSON 树 ---------- */
+    .json-line {
+      padding: 0 16px;
+      line-height: 1.6;
+      white-space: pre;
+      counter-increment: json-line;
+    }
+
+    .json-line-num {
+      display: inline-block;
+      width: 36px;
+      text-align: right;
+      margin-right: 12px;
+      color: var(--text-muted);
+      font-size: 11px;
+      user-select: none;
+    }
+
+    .output-box {
+      counter-reset: json-line;
+    }
+
+    .json-toggle {
+      display: inline-block;
+      width: 16px;
+      text-align: center;
+      cursor: pointer;
+      color: var(--text-muted);
+      user-select: none;
+      transition: transform 0.15s;
+      font-size: 10px;
+    }
+
+    .json-toggle:hover { color: var(--primary); }
+
+    .json-toggle.collapsed { transform: rotate(-90deg); }
+
+    .json-bracket { color: var(--text-muted); }
+
+    .json-key { color: #7dd3fc; }
+
+    .json-string { color: #86efac; }
+
+    .json-number { color: #fbbf24; }
+
+    .json-bool { color: #c084fc; }
+
+    .json-null { color: #94a3b8; }
+
+    .json-collapsed-info {
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 12px;
+    }
+
+    .status-bar {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 20px;
+    }
+
+    .status-bar .error { color: var(--red); }
+    .status-bar .success { color: var(--green); }
+
+    /* ---------- 对比面板 ---------- */
+    #diffPanel .content-area {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .diff-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .diff-input {
+      height: 40%;
+      min-height: 120px;
+    }
+
+    .diff-result-wrap {
+      flex: 1;
+      margin-top: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diff-result {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: auto;
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      padding: 0;
+    }
+
+    .diff-line {
+      padding: 0 16px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 1.7em;
+    }
+
+    .diff-line.added { background: var(--green-bg); }
+    .diff-line.removed { background: var(--red-bg); }
+    .diff-line.changed { background: var(--yellow-bg); }
+
+    .diff-line .line-num {
+      display: inline-block;
+      width: 36px;
+      color: var(--text-muted);
+      user-select: none;
+      text-align: right;
+      margin-right: 12px;
+      font-size: 11px;
+    }
+
+    .diff-legend {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .legend-dot.dot-added { background: var(--green); }
+    .legend-dot.dot-removed { background: var(--red); }
+    .legend-dot.dot-changed { background: var(--yellow); }
+
+    .diff-stats {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      min-height: 20px;
+    }
+
+    .diff-stats span { margin-right: 12px; }
+    .diff-stats .stat-added { color: var(--green); }
+    .diff-stats .stat-removed { color: var(--red); }
+    .diff-stats .stat-changed { color: var(--yellow); }
+
+    .empty-hint {
+      color: var(--text-muted);
+      font-size: 13px;
+      padding: 24px 16px;
+      text-align: center;
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+    @media (max-width: 768px) {
+      header { padding: 0 16px; gap: 16px; }
+      main { padding: 16px; }
+      #formatPanel .content-area,
+      #diffPanel .content-area { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">JSON 工具箱</div>
+  <nav>
+    <button class="active" onclick="switchTab('format')">格式化</button>
+    <button onclick="switchTab('diff')">对比</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ========== 格式化面板 ========== -->
+  <div id="formatPanel" class="panel active">
+    <div class="content-area">
+      <div class="editor-col">
+        <div class="col-header">
+          <h3>输入 JSON</h3>
+          <div class="toolbar">
+            <button class="btn" onclick="loadSample()">示例</button>
+            <button class="btn" onclick="clearInput()">清空</button>
+          </div>
+        </div>
+        <textarea id="jsonInput" placeholder="在此粘贴或输入 JSON ..." spellcheck="false"></textarea>
+      </div>
+      <div class="editor-col">
+        <div class="col-header">
+          <h3>格式化结果</h3>
+          <div class="toolbar">
+            <button class="btn" onclick="compressJSON()">压缩</button>
+            <button class="btn" onclick="copyOutput()">复制</button>
+          </div>
+        </div>
+        <div id="jsonOutput" class="output-box"></div>
+      </div>
+    </div>
+    <div class="status-bar" id="formatStatus"></div>
+  </div>
+
+  <!-- ========== 对比面板 ========== -->
+  <div id="diffPanel" class="panel">
+    <div class="diff-legend">
+      <div class="legend-item"><div class="legend-dot dot-added"></div>新增</div>
+      <div class="legend-item"><div class="legend-dot dot-removed"></div>删除</div>
+      <div class="legend-item"><div class="legend-dot dot-changed"></div>修改</div>
+    </div>
+    <div class="content-area">
+      <div class="diff-col">
+        <div class="col-header">
+          <h3>左侧 JSON</h3>
+          <div class="toolbar">
+            <button class="btn" onclick="clearDiff('left')">清空</button>
+          </div>
+        </div>
+        <textarea id="diffLeft" class="diff-input" placeholder="输入第一个 JSON ..." spellcheck="false"></textarea>
+        <div class="diff-result-wrap">
+          <div class="col-header"><h3>左侧结果</h3></div>
+          <div id="diffResultLeft" class="diff-result">
+            <div class="empty-hint">输入两侧 JSON 后自动对比</div>
+          </div>
+        </div>
+      </div>
+      <div class="diff-col">
+        <div class="col-header">
+          <h3>右侧 JSON</h3>
+          <div class="toolbar">
+            <button class="btn" onclick="clearDiff('right')">清空</button>
+          </div>
+        </div>
+        <textarea id="diffRight" class="diff-input" placeholder="输入第二个 JSON ..." spellcheck="false"></textarea>
+        <div class="diff-result-wrap">
+          <div class="col-header"><h3>右侧结果</h3></div>
+          <div id="diffResultRight" class="diff-result">
+            <div class="empty-hint">输入两侧 JSON 后自动对比</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="diff-stats" id="diffStats"></div>
+  </div>
+</main>
+
+<script>
+// ============ Tab Switching ============
+function switchTab(tab) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+
+  if (tab === 'format') {
+    document.querySelector('nav button:nth-child(1)').classList.add('active');
+    document.getElementById('formatPanel').classList.add('active');
+  } else {
+    document.querySelector('nav button:nth-child(2)').classList.add('active');
+    document.getElementById('diffPanel').classList.add('active');
+  }
+}
+
+// ============ Format Panel ============
+const jsonInput = document.getElementById('jsonInput');
+const jsonOutput = document.getElementById('jsonOutput');
+const formatStatus = document.getElementById('formatStatus');
+
+let debounceTimer;
+jsonInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(formatJSON, 300);
+});
+
+function formatJSON() {
+  const raw = jsonInput.value.trim();
+  if (!raw) {
+    jsonOutput.innerHTML = '';
+    formatStatus.innerHTML = '';
+    return;
+  }
+  try {
+    const obj = relaxedParse(raw);
+    jsonOutput.innerHTML = renderCollapsibleJSON(obj);
+    const keys = countKeys(obj);
+    formatStatus.innerHTML = `<span class="success">JSON 合法</span><span>${keys} 个键</span><span>${raw.length} 字符</span>`;
+  } catch (e) {
+    jsonOutput.innerHTML = '';
+    const pos = extractPosition(e.message);
+    formatStatus.innerHTML = `<span class="error">解析错误：${escapeHtml(e.message)}</span>`;
+  }
+}
+
+function compressJSON() {
+  const raw = jsonInput.value.trim();
+  if (!raw) return;
+  try {
+    const obj = relaxedParse(raw);
+    jsonOutput.innerHTML = '';
+    jsonOutput.textContent = JSON.stringify(obj);
+    formatStatus.innerHTML = '<span class="success">已压缩</span>';
+  } catch(e) {
+    formatStatus.innerHTML = `<span class="error">JSON 不合法，无法压缩</span>`;
+  }
+}
+
+function copyOutput() {
+  const raw = jsonInput.value.trim();
+  if (!raw) return;
+  try {
+    const obj = relaxedParse(raw);
+    const text = JSON.stringify(obj, null, 2);
+    navigator.clipboard.writeText(text).then(() => {
+      formatStatus.innerHTML = '<span class="success">已复制到剪贴板</span>';
+    });
+  } catch(e) {}
+}
+
+function clearInput() {
+  jsonInput.value = '';
+  jsonOutput.innerHTML = '';
+  formatStatus.innerHTML = '';
+}
+
+function loadSample() {
+  const sample = {
+    "name": "JSON 工具箱",
+    "version": "1.0.0",
+    "features": ["格式化", "对比", "高亮"],
+    "config": {
+      "theme": "dark",
+      "autoFormat": true,
+      "indentSize": 2
+    },
+    "tags": [1, 2, 3]
+  };
+  jsonInput.value = JSON.stringify(sample);
+  formatJSON();
+}
+
+function countKeys(obj) {
+  let count = 0;
+  if (typeof obj === 'object' && obj !== null) {
+    if (Array.isArray(obj)) {
+      obj.forEach(item => { count += countKeys(item); });
+    } else {
+      for (const key in obj) {
+        count++;
+        count += countKeys(obj[key]);
+      }
+    }
+  }
+  return count;
+}
+
+function extractPosition(msg) {
+  const m = msg.match(/position\s+(\d+)/i);
+  return m ? parseInt(m[1]) : -1;
+}
+
+function relaxedParse(str) {
+  try {
+    return JSON.parse(str);
+  } catch(_) {}
+
+  // 将单引号的 key/value 转换为双引号后重试
+  let converted = '';
+  let i = 0;
+  while (i < str.length) {
+    const ch = str[i];
+    if (ch === '"') {
+      // 标准双引号字符串，原样保留
+      let j = i + 1;
+      while (j < str.length) {
+        if (str[j] === '\\') { j += 2; continue; }
+        if (str[j] === '"') { j++; break; }
+        j++;
+      }
+      converted += str.substring(i, j);
+      i = j;
+    } else if (ch === "'") {
+      // 单引号字符串 → 转成双引号
+      converted += '"';
+      let j = i + 1;
+      while (j < str.length) {
+        if (str[j] === '\\') {
+          if (str[j + 1] === "'") {
+            converted += "'";
+            j += 2;
+          } else {
+            converted += str.substring(j, j + 2);
+            j += 2;
+          }
+          continue;
+        }
+        if (str[j] === "'") { j++; break; }
+        if (str[j] === '"') {
+          converted += '\\"';
+          j++;
+          continue;
+        }
+        converted += str[j];
+        j++;
+      }
+      converted += '"';
+      i = j;
+    } else {
+      converted += ch;
+      i++;
+    }
+  }
+  // Python 风格布尔值: True → true, False → false, None → null
+  converted = converted.replace(/\bTrue\b/g, 'true')
+                       .replace(/\bFalse\b/g, 'false')
+                       .replace(/\bNone\b/g, 'null');
+  return JSON.parse(converted);
+}
+
+// ============ Diff Panel ============
+const diffLeft = document.getElementById('diffLeft');
+const diffRight = document.getElementById('diffRight');
+const diffResultLeft = document.getElementById('diffResultLeft');
+const diffResultRight = document.getElementById('diffResultRight');
+const diffStats = document.getElementById('diffStats');
+
+let diffTimer;
+diffLeft.addEventListener('input', () => { clearTimeout(diffTimer); diffTimer = setTimeout(runDiff, 400); });
+diffRight.addEventListener('input', () => { clearTimeout(diffTimer); diffTimer = setTimeout(runDiff, 400); });
+
+function clearDiff(side) {
+  if (side === 'left') diffLeft.value = '';
+  else diffRight.value = '';
+  runDiff();
+}
+
+function runDiff() {
+  const leftRaw = diffLeft.value.trim();
+  const rightRaw = diffRight.value.trim();
+
+  if (!leftRaw || !rightRaw) {
+    diffResultLeft.innerHTML = '<div class="empty-hint">输入两侧 JSON 后自动对比</div>';
+    diffResultRight.innerHTML = '<div class="empty-hint">输入两侧 JSON 后自动对比</div>';
+    diffStats.innerHTML = '';
+    return;
+  }
+
+  let leftObj, rightObj;
+  try {
+    leftObj = relaxedParse(leftRaw);
+  } catch(e) {
+    diffResultLeft.innerHTML = `<div class="empty-hint" style="color:var(--red)">左侧 JSON 解析失败：${escapeHtml(e.message)}</div>`;
+    diffResultRight.innerHTML = '';
+    diffStats.innerHTML = '';
+    return;
+  }
+  try {
+    rightObj = relaxedParse(rightRaw);
+  } catch(e) {
+    diffResultLeft.innerHTML = '';
+    diffResultRight.innerHTML = `<div class="empty-hint" style="color:var(--red)">右侧 JSON 解析失败：${escapeHtml(e.message)}</div>`;
+    diffStats.innerHTML = '';
+    return;
+  }
+
+  const diffs = deepDiff(leftObj, rightObj, '');
+  const leftFormatted = JSON.stringify(leftObj, null, 2);
+  const rightFormatted = JSON.stringify(rightObj, null, 2);
+
+  const leftLines = leftFormatted.split('\n');
+  const rightLines = rightFormatted.split('\n');
+
+  const leftPathMap = buildPathMap(leftObj);
+  const rightPathMap = buildPathMap(rightObj);
+
+  const changedPaths = new Set();
+  const removedPaths = new Set();
+  const addedPaths = new Set();
+
+  let addedCount = 0, removedCount = 0, changedCount = 0;
+
+  diffs.forEach(d => {
+    if (d.type === 'changed') {
+      changedPaths.add(d.path);
+      changedCount++;
+    } else if (d.type === 'removed') {
+      removedPaths.add(d.path);
+      removedCount++;
+    } else if (d.type === 'added') {
+      addedPaths.add(d.path);
+      addedCount++;
+    }
+  });
+
+  diffResultLeft.innerHTML = renderDiffLines(leftLines, leftPathMap, removedPaths, changedPaths, new Set(), 'left');
+  diffResultRight.innerHTML = renderDiffLines(rightLines, rightPathMap, new Set(), changedPaths, addedPaths, 'right');
+
+  diffStats.innerHTML = `
+    <span class="stat-added">+${addedCount} 新增</span>
+    <span class="stat-removed">-${removedCount} 删除</span>
+    <span class="stat-changed">~${changedCount} 修改</span>
+  `;
+
+  syncScroll();
+}
+
+function renderDiffLines(lines, pathMap, removedPaths, changedPaths, addedPaths, side) {
+  return lines.map((line, i) => {
+    const lineNum = i + 1;
+    let cls = '';
+    const paths = pathMap[i] || [];
+    for (const p of paths) {
+      if (removedPaths.has(p)) { cls = 'removed'; break; }
+      if (addedPaths.has(p)) { cls = 'added'; break; }
+      if (changedPaths.has(p)) { cls = 'changed'; break; }
+    }
+    return `<div class="diff-line ${cls}"><span class="line-num">${lineNum}</span>${escapeHtml(line)}</div>`;
+  }).join('');
+}
+
+function buildPathMap(obj) {
+  const formatted = JSON.stringify(obj, null, 2);
+  const lines = formatted.split('\n');
+  const map = {};
+  const stack = [];
+  let currentPath = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    const keyMatch = trimmed.match(/^"([^"]+)"\s*:/);
+    if (keyMatch) {
+      const key = keyMatch[1];
+      const parentPath = stack.length > 0 ? stack[stack.length - 1].path : '';
+      currentPath = parentPath ? parentPath + '.' + key : key;
+      if (!map[i]) map[i] = [];
+      map[i].push(currentPath);
+
+      if (trimmed.endsWith('{') || trimmed.endsWith('[')) {
+        stack.push({ path: currentPath, char: trimmed.endsWith('{') ? '{' : '[' });
+      }
+    } else if (trimmed === '{' || trimmed === '[') {
+      const parentPath = stack.length > 0 ? stack[stack.length - 1].path : '';
+      stack.push({ path: parentPath, char: trimmed });
+      if (!map[i]) map[i] = [];
+      if (parentPath) map[i].push(parentPath);
+    } else if (trimmed.startsWith('}') || trimmed.startsWith(']')) {
+      if (stack.length > 0) {
+        const popped = stack.pop();
+        if (!map[i]) map[i] = [];
+        if (popped.path) map[i].push(popped.path);
+      }
+    } else {
+      if (stack.length > 0) {
+        const parentPath = stack[stack.length - 1].path;
+        if (parentPath) {
+          if (!map[i]) map[i] = [];
+          map[i].push(parentPath);
+        }
+      }
+    }
+  }
+
+  return map;
+}
+
+function deepDiff(left, right, path) {
+  const diffs = [];
+
+  if (left === right) return diffs;
+
+  if (typeof left !== typeof right || Array.isArray(left) !== Array.isArray(right)) {
+    diffs.push({ path: path || '(root)', type: 'changed', left, right });
+    return diffs;
+  }
+
+  if (typeof left !== 'object' || left === null || right === null) {
+    if (left !== right) {
+      diffs.push({ path: path || '(root)', type: 'changed', left, right });
+    }
+    return diffs;
+  }
+
+  if (Array.isArray(left)) {
+    const maxLen = Math.max(left.length, right.length);
+    for (let i = 0; i < maxLen; i++) {
+      const childPath = path ? path + '[' + i + ']' : '[' + i + ']';
+      if (i >= left.length) {
+        diffs.push({ path: childPath, type: 'added', right: right[i] });
+      } else if (i >= right.length) {
+        diffs.push({ path: childPath, type: 'removed', left: left[i] });
+      } else {
+        diffs.push(...deepDiff(left[i], right[i], childPath));
+      }
+    }
+    return diffs;
+  }
+
+  const allKeys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of allKeys) {
+    const childPath = path ? path + '.' + key : key;
+    if (!(key in left)) {
+      diffs.push({ path: childPath, type: 'added', right: right[key] });
+    } else if (!(key in right)) {
+      diffs.push({ path: childPath, type: 'removed', left: left[key] });
+    } else {
+      diffs.push(...deepDiff(left[key], right[key], childPath));
+    }
+  }
+
+  return diffs;
+}
+
+function syncScroll() {
+  const leftEl = document.getElementById('diffResultLeft');
+  const rightEl = document.getElementById('diffResultRight');
+
+  leftEl.onscroll = () => { rightEl.scrollTop = leftEl.scrollTop; };
+  rightEl.onscroll = () => { leftEl.scrollTop = rightEl.scrollTop; };
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============ Collapsible JSON Rendering ============
+let _nodeId = 0;
+let _lineNum = 0;
+
+function ln() {
+  _lineNum++;
+  return `<span class="json-line-num">${_lineNum}</span>`;
+}
+
+function renderCollapsibleJSON(data) {
+  _nodeId = 0;
+  _lineNum = 0;
+  return renderNode(data, 0, false);
+}
+
+function renderNode(val, indent, hasComma) {
+  const comma = hasComma ? ',' : '';
+  const pad = '  '.repeat(indent);
+
+  if (val === null) {
+    return `<div class="json-line">${ln()}${pad}<span class="json-null">null</span>${comma}</div>`;
+  }
+  if (typeof val === 'boolean') {
+    return `<div class="json-line">${ln()}${pad}<span class="json-bool">${val}</span>${comma}</div>`;
+  }
+  if (typeof val === 'number') {
+    return `<div class="json-line">${ln()}${pad}<span class="json-number">${val}</span>${comma}</div>`;
+  }
+  if (typeof val === 'string') {
+    return `<div class="json-line">${ln()}${pad}<span class="json-string">"${escapeHtml(val)}"</span>${comma}</div>`;
+  }
+
+  if (Array.isArray(val)) {
+    return renderContainer(val, indent, '[', ']', comma, true);
+  }
+
+  return renderContainer(val, indent, '{', '}', comma, false);
+}
+
+function renderContainer(obj, indent, open, close, comma, isArray) {
+  const id = _nodeId++;
+  const pad = '  '.repeat(indent);
+  const count = isArray ? obj.length : Object.keys(obj).length;
+
+  if (count === 0) {
+    return `<div class="json-line">${ln()}${pad}<span class="json-bracket">${open}${close}</span>${comma}</div>`;
+  }
+
+  const label = isArray ? `${count} items` : `${count} keys`;
+  let html = '';
+
+  html += `<div class="json-line">${ln()}${pad}<span class="json-toggle" onclick="toggleJsonNode('${id}')" id="tog_${id}">&#9660;</span><span class="json-bracket">${open}</span><span class="json-collapsed-info" id="info_${id}" style="display:none"> ${label} </span><span class="json-bracket" id="close_inline_${id}" style="display:none">${close}</span><span id="comma_inline_${id}" style="display:none">${comma}</span></div>`;
+
+  html += `<div id="body_${id}">`;
+  if (isArray) {
+    obj.forEach((item, i) => {
+      html += renderArrayItem(item, indent + 1, i < obj.length - 1);
+    });
+  } else {
+    const keys = Object.keys(obj);
+    keys.forEach((key, i) => {
+      html += renderObjectEntry(key, obj[key], indent + 1, i < keys.length - 1);
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="json-line" id="closeline_${id}">${ln()}${pad}<span class="json-bracket">${close}</span>${comma}</div>`;
+
+  return html;
+}
+
+function renderArrayItem(val, indent, hasComma) {
+  const commaStr = hasComma ? ',' : '';
+  const pad = '  '.repeat(indent);
+
+  if (val !== null && typeof val === 'object') {
+    if (Array.isArray(val)) {
+      return renderContainerWithPrefix(val, indent, '', '[', ']', commaStr, true);
+    }
+    return renderContainerWithPrefix(val, indent, '', '{', '}', commaStr, false);
+  }
+
+  return `<div class="json-line">${ln()}${pad}${renderInlineValue(val)}${commaStr}</div>`;
+}
+
+function renderObjectEntry(key, val, indent, hasComma) {
+  const commaStr = hasComma ? ',' : '';
+  const pad = '  '.repeat(indent);
+  const keyHtml = `<span class="json-key">"${escapeHtml(key)}"</span>: `;
+
+  if (val !== null && typeof val === 'object') {
+    if (Array.isArray(val)) {
+      return renderContainerWithPrefix(val, indent, keyHtml, '[', ']', commaStr, true);
+    }
+    return renderContainerWithPrefix(val, indent, keyHtml, '{', '}', commaStr, false);
+  }
+
+  return `<div class="json-line">${ln()}${pad}${keyHtml}${renderInlineValue(val)}${commaStr}</div>`;
+}
+
+function renderContainerWithPrefix(obj, indent, prefix, open, close, comma, isArray) {
+  const id = _nodeId++;
+  const pad = '  '.repeat(indent);
+  const count = isArray ? obj.length : Object.keys(obj).length;
+
+  if (count === 0) {
+    return `<div class="json-line">${ln()}${pad}${prefix}<span class="json-bracket">${open}${close}</span>${comma}</div>`;
+  }
+
+  const label = isArray ? `${count} items` : `${count} keys`;
+  let html = '';
+
+  html += `<div class="json-line">${ln()}${pad}${prefix}<span class="json-toggle" onclick="toggleJsonNode('${id}')" id="tog_${id}">&#9660;</span><span class="json-bracket">${open}</span><span class="json-collapsed-info" id="info_${id}" style="display:none"> ${label} </span><span class="json-bracket" id="close_inline_${id}" style="display:none">${close}</span><span id="comma_inline_${id}" style="display:none">${comma}</span></div>`;
+
+  html += `<div id="body_${id}">`;
+  if (isArray) {
+    obj.forEach((item, i) => {
+      html += renderArrayItem(item, indent + 1, i < obj.length - 1);
+    });
+  } else {
+    const keys = Object.keys(obj);
+    keys.forEach((key, i) => {
+      html += renderObjectEntry(key, obj[key], indent + 1, i < keys.length - 1);
+    });
+  }
+  html += `</div>`;
+
+  html += `<div class="json-line" id="closeline_${id}">${ln()}${pad}<span class="json-bracket">${close}</span>${comma}</div>`;
+
+  return html;
+}
+
+function renderInlineValue(val) {
+  if (val === null) return '<span class="json-null">null</span>';
+  if (typeof val === 'boolean') return `<span class="json-bool">${val}</span>`;
+  if (typeof val === 'number') return `<span class="json-number">${val}</span>`;
+  if (typeof val === 'string') return `<span class="json-string">"${escapeHtml(val)}"</span>`;
+  return escapeHtml(String(val));
+}
+
+function toggleJsonNode(id) {
+  const body = document.getElementById('body_' + id);
+  const closeLine = document.getElementById('closeline_' + id);
+  const toggle = document.getElementById('tog_' + id);
+  const info = document.getElementById('info_' + id);
+  const closeInline = document.getElementById('close_inline_' + id);
+  const commaInline = document.getElementById('comma_inline_' + id);
+
+  const collapsed = body.style.display !== 'none';
+  body.style.display = collapsed ? 'none' : '';
+  closeLine.style.display = collapsed ? 'none' : '';
+  toggle.classList.toggle('collapsed', collapsed);
+  info.style.display = collapsed ? 'inline' : 'none';
+  closeInline.style.display = collapsed ? 'inline' : 'none';
+  commaInline.style.display = collapsed ? 'inline' : 'none';
+}
+</script>
+</body>
+</html>
