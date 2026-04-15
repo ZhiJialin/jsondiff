@@ -1,0 +1,8 @@
+JSON 工具箱服务启动中...
+访问地址: http://localhost:8080
+按 Ctrl+C 停止服务
+
+Python was not found but can be installed from the Microsoft Store: ms-windows-store://pdp/?productid=9NJ46SX7X90P::1 - - [15/Apr/2026 14:27:58] "GET / HTTP/1.1" 200 -
+::1 - - [15/Apr/2026 14:27:59] code 404, message File not found
+::1 - - [15/Apr/2026 14:27:59] "GET /favicon.ico HTTP/1.1" 404 -
+::1 - - [15/Apr/2026 14:55:35] "GET / HTTP/1.1" 200 -

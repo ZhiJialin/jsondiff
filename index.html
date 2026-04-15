@@ -265,15 +265,26 @@
     }
 
     .diff-line {
-      padding: 0 16px;
+      padding: 0 16px 0 13px;
+      border-left: 3px solid transparent;
       white-space: pre-wrap;
       word-break: break-all;
       min-height: 1.7em;
+      transition: background 0.15s;
     }
 
-    .diff-line.added { background: var(--green-bg); }
-    .diff-line.removed { background: var(--red-bg); }
-    .diff-line.changed { background: var(--yellow-bg); }
+    .diff-line.added { background: rgba(34, 197, 94, 0.18); border-left-color: var(--green); }
+    .diff-line.removed { background: rgba(239, 68, 68, 0.18); border-left-color: var(--red); }
+    .diff-line.changed { background: rgba(234, 179, 8, 0.18); border-left-color: var(--yellow); }
+
+    .diff-value-highlight {
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin: 0 -2px;
+    }
+    .diff-line.changed .diff-value-highlight { background: rgba(234, 179, 8, 0.35); }
+    .diff-line.added .diff-value-highlight { background: rgba(34, 197, 94, 0.35); }
+    .diff-line.removed .diff-value-highlight { background: rgba(239, 68, 68, 0.35); }
 
     .diff-line .line-num {
       display: inline-block;
@@ -282,7 +293,25 @@
       user-select: none;
       text-align: right;
       margin-right: 12px;
-      font-size: 11px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .diff-line.added .line-num { color: var(--green); }
+    .diff-line.removed .line-num { color: var(--red); }
+    .diff-line.changed .line-num { color: var(--yellow); }
+
+    .diff-fold {
+      padding: 4px 16px;
+      color: var(--text-muted);
+      font-size: 12px;
+      text-align: center;
+      background: rgba(71, 85, 105, 0.25);
+      border-top: 1px dashed var(--border);
+      border-bottom: 1px dashed var(--border);
+      user-select: none;
+      cursor: default;
+      letter-spacing: 1px;
     }
 
     .diff-legend {
@@ -682,63 +711,147 @@ function runDiff() {
 }
 
 function renderDiffLines(lines, pathMap, removedPaths, changedPaths, addedPaths, side) {
-  return lines.map((line, i) => {
-    const lineNum = i + 1;
-    let cls = '';
+  const CONTEXT = 3;
+
+  const lineClasses = lines.map((_, i) => {
     const paths = pathMap[i] || [];
     for (const p of paths) {
-      if (removedPaths.has(p)) { cls = 'removed'; break; }
-      if (addedPaths.has(p)) { cls = 'added'; break; }
-      if (changedPaths.has(p)) { cls = 'changed'; break; }
+      if (removedPaths.has(p)) return 'removed';
+      if (addedPaths.has(p)) return 'added';
+      if (changedPaths.has(p)) return 'changed';
     }
-    return `<div class="diff-line ${cls}"><span class="line-num">${lineNum}</span>${escapeHtml(line)}</div>`;
-  }).join('');
+    return '';
+  });
+
+  const diffIndices = [];
+  lineClasses.forEach((cls, i) => { if (cls) diffIndices.push(i); });
+
+  if (diffIndices.length === 0) {
+    return '<div class="diff-fold">无差异</div>';
+  }
+
+  const ranges = [];
+  let rs = Math.max(0, diffIndices[0] - CONTEXT);
+  let re = Math.min(lines.length - 1, diffIndices[0] + CONTEXT);
+  for (let k = 1; k < diffIndices.length; k++) {
+    const ns = Math.max(0, diffIndices[k] - CONTEXT);
+    const ne = Math.min(lines.length - 1, diffIndices[k] + CONTEXT);
+    if (ns <= re + 1) {
+      re = Math.max(re, ne);
+    } else {
+      ranges.push([rs, re]);
+      rs = ns;
+      re = ne;
+    }
+  }
+  ranges.push([rs, re]);
+
+  let html = '';
+  let lastEnd = -1;
+
+  for (const [start, end] of ranges) {
+    const hidden = start - lastEnd - 1;
+    if (hidden > 0) {
+      html += `<div class="diff-fold">··· ${hidden} 行未变化 ···</div>`;
+    }
+    for (let i = start; i <= end; i++) {
+      const cls = lineClasses[i];
+      const escaped = escapeHtml(lines[i]);
+      const content = cls ? highlightValue(escaped) : escaped;
+      html += `<div class="diff-line ${cls}"><span class="line-num">${i + 1}</span>${content}</div>`;
+    }
+    lastEnd = end;
+  }
+
+  const trailing = lines.length - 1 - lastEnd;
+  if (trailing > 0) {
+    html += `<div class="diff-fold">··· ${trailing} 行未变化 ···</div>`;
+  }
+
+  return html;
+}
+
+function highlightValue(escapedLine) {
+  const kvMatch = escapedLine.match(/^(\s*"(?:[^"\\]|\\.)*"\s*:\s*)(.*)/);
+  if (kvMatch) {
+    const keyPart = kvMatch[1];
+    const valuePart = kvMatch[2];
+    const trimVal = valuePart.trim();
+    if (/^[\{\[\}\]],?$/.test(trimVal)) return escapedLine;
+    return keyPart + '<span class="diff-value-highlight">' + valuePart + '</span>';
+  }
+  const trimmed = escapedLine.trim();
+  if (!trimmed || /^[\{\}\[\],]+$/.test(trimmed)) return escapedLine;
+  const indent = escapedLine.match(/^(\s*)/)[1];
+  return indent + '<span class="diff-value-highlight">' + trimmed + '</span>';
 }
 
 function buildPathMap(obj) {
-  const formatted = JSON.stringify(obj, null, 2);
-  const lines = formatted.split('\n');
   const map = {};
-  const stack = [];
-  let currentPath = '';
+  let line = 0;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+  function addPath(ln, path) {
+    if (!map[ln]) map[ln] = [];
+    map[ln].push(path);
+  }
 
-    const keyMatch = trimmed.match(/^"([^"]+)"\s*:/);
-    if (keyMatch) {
-      const key = keyMatch[1];
-      const parentPath = stack.length > 0 ? stack[stack.length - 1].path : '';
-      currentPath = parentPath ? parentPath + '.' + key : key;
-      if (!map[i]) map[i] = [];
-      map[i].push(currentPath);
-
-      if (trimmed.endsWith('{') || trimmed.endsWith('[')) {
-        stack.push({ path: currentPath, char: trimmed.endsWith('{') ? '{' : '[' });
+  function walkValue(val, path) {
+    if (val === null || typeof val !== 'object') {
+      addPath(line, path);
+      return;
+    }
+    if (Array.isArray(val)) {
+      addPath(line, path);
+      if (val.length === 0) return;
+      for (let i = 0; i < val.length; i++) {
+        line++;
+        walkValue(val[i], path ? path + '[' + i + ']' : '[' + i + ']');
       }
-    } else if (trimmed === '{' || trimmed === '[') {
-      const parentPath = stack.length > 0 ? stack[stack.length - 1].path : '';
-      stack.push({ path: parentPath, char: trimmed });
-      if (!map[i]) map[i] = [];
-      if (parentPath) map[i].push(parentPath);
-    } else if (trimmed.startsWith('}') || trimmed.startsWith(']')) {
-      if (stack.length > 0) {
-        const popped = stack.pop();
-        if (!map[i]) map[i] = [];
-        if (popped.path) map[i].push(popped.path);
+      line++;
+      addPath(line, path);
+      return;
+    }
+    addPath(line, path);
+    const keys = Object.keys(val);
+    if (keys.length === 0) return;
+    for (const key of keys) {
+      line++;
+      const childPath = path ? path + '.' + key : key;
+      addPath(line, childPath);
+      if (val[key] !== null && typeof val[key] === 'object') {
+        walkNested(val[key], childPath);
       }
+    }
+    line++;
+    addPath(line, path);
+  }
+
+  function walkNested(val, path) {
+    if (Array.isArray(val)) {
+      if (val.length === 0) return;
+      for (let i = 0; i < val.length; i++) {
+        line++;
+        walkValue(val[i], path + '[' + i + ']');
+      }
+      line++;
+      addPath(line, path);
     } else {
-      if (stack.length > 0) {
-        const parentPath = stack[stack.length - 1].path;
-        if (parentPath) {
-          if (!map[i]) map[i] = [];
-          map[i].push(parentPath);
+      const keys = Object.keys(val);
+      if (keys.length === 0) return;
+      for (const key of keys) {
+        line++;
+        const childPath = path + '.' + key;
+        addPath(line, childPath);
+        if (val[key] !== null && typeof val[key] === 'object') {
+          walkNested(val[key], childPath);
         }
       }
+      line++;
+      addPath(line, path);
     }
   }
 
+  walkValue(obj, '');
   return map;
 }
 
